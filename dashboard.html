@@ -108,7 +108,7 @@
 
     <script>
         // --- WebSocket Connection ---
-        const socket = io();
+        const socket = io("[https://your-backend-service-name.onrender.com](https://your-backend-service-name.onrender.com)");
         const connectionStatusEl = document.getElementById('connection-status');
         
         socket.on('connect', () => {
