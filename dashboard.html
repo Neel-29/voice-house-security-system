@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AIoT Home Security Dashboard</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Socket.IO client library -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.2/socket.io.js"></script>
+    <!-- Custom Font and Icons -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #111827; /* Dark Gray */
+            color: #E5E7EB; /* Light Gray */
+        }
+        .card {
+            background-color: #1F2937; /* Gray-800 */
+            border: 1px solid #374151; /* Gray-700 */
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+        }
+        .log-container {
+            height: 20rem;
+            background-color: #0d1117;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 0.875rem;
+            color: #9CA3AF;
+        }
+        .mic-button {
+            transition: all 0.2s ease-in-out;
+        }
+        .mic-button.recording {
+            background-color: #EF4444; /* Red-500 */
+            transform: scale(1.1);
+            box-shadow: 0 0 20px #EF4444;
+        }
+        .status-dot {
+            height: 12px;
+            width: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body class="p-4 sm:p-6 lg:p-8">
+
+    <!-- Error Alert Banner -->
+    <div id="error-alert" class="hidden fixed top-4 left-1/2 -translate-x-1/2 z-50 w-11/12 max-w-2xl p-4 rounded-lg bg-red-800/90 border border-red-600 text-white text-center shadow-lg">
+        <p id="error-message"></p>
+        <button id="close-error-alert" class="absolute top-1 right-3 text-2xl font-bold opacity-70 hover:opacity-100">&times;</button>
+    </div>
+
+    <div class="max-w-7xl mx-auto">
+        <!-- Header -->
+        <header class="flex justify-between items-center mb-6">
+            <h1 class="text-3xl font-bold text-white">Home Security Dashboard</h1>
+            <div id="connection-status" class="flex items-center space-x-2 text-red-400">
+                <div class="status-dot bg-red-500"></div>
+                <span>Connecting...</span>
+            </div>
+        </header>
+
+        <main class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Left Column: Devices and Voice Control -->
+            <div class="lg:col-span-1 space-y-6">
+                <!-- Device Status Card -->
+                <div class="card p-6">
+                    <h2 class="text-xl font-semibold mb-4 text-white">Device Status</h2>
+                    <div id="device-list" class="space-y-4">
+                        <!-- Device statuses will be populated by JavaScript -->
+                        <p class="text-gray-400">Waiting for device data...</p>
+                    </div>
+                </div>
+
+                <!-- Voice Control Card -->
+                <div class="card p-6 text-center">
+                    <h2 class="text-xl font-semibold mb-4 text-white">Voice Control</h2>
+                    <p id="voice-status" class="text-gray-400 mb-4 h-6">Click the mic and speak a command</p>
+                    <button id="mic-button" class="mic-button bg-blue-600 hover:bg-blue-700 text-white rounded-full p-6 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-gray-800 focus:ring-blue-500">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-10 w-10" viewBox="0 0 20 20" fill="currentColor">
+                            <path fill-rule="evenodd" d="M7 4a3 3 0 016 0v4a3 3 0 11-6 0V4zm5 10.5a.5.5 0 01.5.5v.5a2.5 2.5 0 01-5 0V15a.5.5 0 01.5-.5a4.5 4.5 0 004-4.5.5.5 0 01.5-.5z" clip-rule="evenodd" />
+                            <path d="M4 10a.5.5 0 00-.5.5v.5a6 6 0 0012 0v-.5a.5.5 0 00-.5-.5H4z" />
+                        </svg>
+                    </button>
+                    <p class="text-xs text-gray-500 mt-4">e.g., "Lock the front door", "Arm the alarm", "What is the status?"</p>
+                </div>
+            </div>
+
+            <!-- Right Column: Event Log -->
+            <div class="lg:col-span-2">
+                <div class="card p-6">
+                    <h2 class="text-xl font-semibold mb-4 text-white">Event Log</h2>
+                    <div id="log-container" class="log-container p-4 rounded-md overflow-y-auto">
+                        <!-- Log messages will be populated here -->
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script>
+        // --- WebSocket Connection ---
+        const socket = io();
+        const connectionStatusEl = document.getElementById('connection-status');
+        
+        socket.on('connect', () => {
+            console.log('Connected to backend server.');
+            connectionStatusEl.innerHTML = `
+                <div class="status-dot bg-green-500"></div>
+                <span class="text-green-400">Connected</span>
+            `;
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Disconnected from backend server.');
+             connectionStatusEl.innerHTML = `
+                <div class="status-dot bg-red-500"></div>
+                <span class="text-red-400">Disconnected</span>
+            `;
+        });
+        
+        // --- UI Updates from Server ---
+        const deviceListEl = document.getElementById('device-list');
+        const logContainerEl = document.getElementById('log-container');
+
+        // Update device status display
+        socket.on('status_update', (data) => {
+            const devices = data.devices;
+            deviceListEl.innerHTML = ''; // Clear previous statuses
+            for (const deviceId in devices) {
+                const device = devices[deviceId];
+                const stateColor = getStateColor(device.state);
+
+                const deviceEl = document.createElement('div');
+                deviceEl.className = 'flex justify-between items-center';
+                deviceEl.innerHTML = `
+                    <span class="text-gray-300">${device.name}</span>
+                    <span class="font-semibold px-3 py-1 text-sm rounded-full ${stateColor.bg} ${stateColor.text}">${device.state.charAt(0).toUpperCase() + device.state.slice(1)}</span>
+                `;
+                deviceListEl.appendChild(deviceEl);
+            }
+        });
+
+        // Add new log entry
+        socket.on('log_event', (data) => {
+            const logEntry = document.createElement('p');
+            logEntry.textContent = data.log;
+            logContainerEl.appendChild(logEntry);
+            // Auto-scroll to the bottom
+            logContainerEl.scrollTop = logContainerEl.scrollHeight;
+        });
+
+        // Helper to determine color based on state
+        function getStateColor(state) {
+            switch (state) {
+                case 'locked':
+                case 'armed':
+                    return { bg: 'bg-green-200', text: 'text-green-800' };
+                case 'unlocked':
+                case 'disarmed':
+                    return { bg: 'bg-yellow-200', text: 'text-yellow-800' };
+                case 'active':
+                    return { bg: 'bg-red-200', text: 'text-red-800' };
+                case 'inactive':
+                    return { bg: 'bg-gray-200', text: 'text-gray-800' };
+                default:
+                    return { bg: 'bg-gray-500', text: 'text-white' };
+            }
+        }
+        
+        // --- Speech Recognition (Web Speech API) ---
+        const micButton = document.getElementById('mic-button');
+        const voiceStatusEl = document.getElementById('voice-status');
+        const errorAlertEl = document.getElementById('error-alert');
+        const errorMessageEl = document.getElementById('error-message');
+        const closeErrorAlertBtn = document.getElementById('close-error-alert');
+
+        closeErrorAlertBtn.addEventListener('click', () => {
+            errorAlertEl.classList.add('hidden');
+        });
+
+        function showError(message) {
+            // Show the small status message
+            voiceStatusEl.textContent = message;
+            voiceStatusEl.classList.remove('text-blue-400');
+            voiceStatusEl.classList.add('text-red-400');
+            // Show the prominent alert banner
+            errorMessageEl.textContent = message;
+            errorAlertEl.classList.remove('hidden');
+        }
+
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        let recognition;
+
+        if (SpeechRecognition) {
+            recognition = new SpeechRecognition();
+            recognition.continuous = false;
+            recognition.lang = 'en-US';
+            recognition.interimResults = false;
+
+            micButton.addEventListener('click', () => {
+                if (micButton.classList.contains('recording')) {
+                    recognition.stop();
+                } else {
+                    recognition.start();
+                }
+            });
+
+            recognition.onstart = () => {
+                errorAlertEl.classList.add('hidden'); // Hide error on new attempt
+                micButton.classList.add('recording');
+                voiceStatusEl.textContent = "Listening...";
+                voiceStatusEl.classList.remove('text-gray-400', 'text-red-400');
+                voiceStatusEl.classList.add('text-blue-400');
+            };
+
+            recognition.onend = () => {
+                micButton.classList.remove('recording');
+                voiceStatusEl.textContent = "Click the mic and speak a command";
+                voiceStatusEl.classList.add('text-gray-400');
+                voiceStatusEl.classList.remove('text-blue-400', 'text-red-400');
+            };
+
+            recognition.onresult = (event) => {
+                errorAlertEl.classList.add('hidden'); // Hide error on success
+                const transcript = event.results[0][0].transcript;
+                voiceStatusEl.textContent = `You said: "${transcript}"`;
+                // Send the transcribed text to the backend for processing
+                socket.emit('process_command', { text: transcript });
+            };
+
+            recognition.onerror = (event) => {
+                console.error('Speech recognition error:', event.error);
+                let friendlyMessage = `Error: ${event.error}`;
+                // Provide more user-friendly error messages for common issues.
+                switch (event.error) {
+                    case 'network':
+                        friendlyMessage = "Network error: The speech service is unreachable. Please check your internet connection.";
+                        break;
+                    case 'not-allowed':
+                    case 'service-not-allowed':
+                        friendlyMessage = "Mic access denied. Please allow microphone permissions in your browser settings.";
+                        break;
+                    case 'no-speech':
+                        friendlyMessage = "No speech detected. Please try again.";
+                        break;
+                }
+                showError(friendlyMessage);
+            };
+
+        } else {
+            micButton.disabled = true;
+            const message = "Speech recognition is not supported in this browser.";
+            showError(message);
+        }
+    </script>
+</body>
+</html>
+
