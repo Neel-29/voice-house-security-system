@@ -14,7 +14,7 @@ from threading import Thread, Lock
 # Flask & SocketIO App Initialization
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
-socketio = SocketIO(app, cors_allowed_origins="https://voice-house-security-system.vercel.app/")
+socketio = SocketIO(app, cors_allowed_origins="[https://voice-house-security-system.vercel.app/](https://voice-house-security-system.vercel.app/)")
 
 # MQTT Broker Configuration
 MQTT_BROKER = 'localhost'

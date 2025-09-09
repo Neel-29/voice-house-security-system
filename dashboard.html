@@ -111,7 +111,7 @@
         const socket = io("[https://aiot-security-backend.onrender.com](https://aiot-security-backend.onrender.com)");
         const connectionStatusEl = document.getElementById('connection-status');
         
-        socket.on('connect', () => {
+        socket.on('connect', () => {    
             console.log('Connected to backend server.');
             connectionStatusEl.innerHTML = `
                 <div class="status-dot bg-green-500"></div>
